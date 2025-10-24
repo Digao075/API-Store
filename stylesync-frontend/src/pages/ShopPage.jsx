@@ -8,7 +8,7 @@ export function ShopPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const apiUrl = 'http://localhost:3333/api/products';
+    const apiUrl = '${import.meta.env.VITE_API_URL}/api/products';
     axios.get(apiUrl)
       .then(response => {
         setProducts(response.data);

@@ -34,7 +34,7 @@ export function ProductDetailPage() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
   useEffect(() => {
-    const apiUrl = `http://localhost:3333/api/products/${productId}`;
+    const apiUrl = `${import.meta.env.VITE_API_URL}/api/products/${productId}`;
     async function fetchProductDetails() {
       try {
         setLoading(true);
