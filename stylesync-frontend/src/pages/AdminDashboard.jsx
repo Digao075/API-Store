@@ -25,7 +25,7 @@ export function AdminDashboard() {
   const fetchProducts = async () => {
     try {
       setLoadingProducts(true);
-      const response = await axios.get('http://localhost:3333/api/products');
+      const response = await axios.get('${import.meta.env.VITE_API_URL}/api/products');
       setProducts(response.data);
     } catch (err) {
       console.error("Erro ao buscar produtos:", err);
@@ -64,13 +64,13 @@ export function AdminDashboard() {
       const uploadPromises = Array.from(imageFiles).map(file => {
         const formData = new FormData();
         formData.append('image', file);
-        return axios.post('http://localhost:3333/api/upload', formData);
+        return axios.post('${import.meta.env.VITE_API_URL}/api/upload', formData);
       });
       const uploadResponses = await Promise.all(uploadPromises);
       const imageUrls = uploadResponses.map(response => response.data.url);
 
       const finalProductData = { ...productData, imageUrls };
-      await axios.post('http://localhost:3333/api/products', finalProductData, {
+      await axios.post('${import.meta.env.VITE_API_URL}/api/products', finalProductData, {
         headers: { Authorization: `Bearer ${token}` },
       });
 
@@ -93,7 +93,7 @@ export function AdminDashboard() {
 
     if (confirmDelete) {
       try {
-        await axios.delete(`http://localhost:3333/api/products/${productId}`, {
+        await axios.delete(`${import.meta.env.VITE_API_URL}/api/products/${productId}`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         setMessage("Produto deletado com sucesso!");

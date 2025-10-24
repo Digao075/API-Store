@@ -29,7 +29,7 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     try {
-      const response = await axios.post('http://localhost:3333/api/auth/login', { email, password });
+      const response = await axios.post('${import.meta.env.VITE_API_URL}/api/auth/login', { email, password });
       const receivedToken = response.data.token;
       const decodedUser = jwtDecode(receivedToken);
 
@@ -45,7 +45,7 @@ export function AuthProvider({ children }) {
 
   const register = async (name, email, phoneNumber, password) => {
     try {
-      const response = await axios.post('http://localhost:3333/api/auth/register', {
+      const response = await axios.post('${import.meta.env.VITE_API_URL}/api/auth/register', {
         name,
         email,
         phoneNumber,

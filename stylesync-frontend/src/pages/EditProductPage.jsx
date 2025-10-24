@@ -24,7 +24,7 @@ export function EditProductPage() {
     const fetchProduct = async () => {
       try {
         setLoading(true);
-        const response = await axios.get(`http://localhost:3333/api/products/${productId}`);
+        const response = await axios.get(`${import.meta.env.VITE_API_URL}/api/products/${productId}`);
         setProductData({
           name: response.data.name,
           description: response.data.description,
@@ -53,7 +53,7 @@ export function EditProductPage() {
     setError('');
 
     try {
-      await axios.patch(`http://localhost:3333/api/products/${productId}`, productData, {
+      await axios.patch(`${import.meta.env.VITE_API_URL}/api/products/${productId}`, productData, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setMessage('Produto atualizado com sucesso!');
