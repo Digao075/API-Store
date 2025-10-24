@@ -1,15 +1,21 @@
 
 require('dotenv').config();
 const express = require('express');
-const { PrismaClient } = require('@prisma/client');
+const { PrismaClient, Prisma } = require('@prisma/client');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken'); 
 const authMiddleware = require('./middlewares/authMiddleware');
 const prisma = new PrismaClient();
 const app = express();
+const cors = require('cors');
+const upload = require('./config/multerConfig');
+const cloudinary = require('./config/cloudinaryConfig');
+
+
+
 const PORT = process.env.PORT || 3333;
 
-
+app.use(cors());
 app.use(express.json());
 
 // ROTAS DA API 
@@ -19,7 +25,7 @@ app.get('/', (req, res) => {
 
 app.post('/api/products', authMiddleware, async (req, res) => {
   try {
-    const { id, name, description, price, imageUrl, category } = req.body;
+    const { id, name, description, price, imageUrls, category } = req.body;
 
     if (!name || !price) {
       return res.status(400).json({ error: 'Nome e preço são obrigatórios.' });
@@ -31,7 +37,7 @@ app.post('/api/products', authMiddleware, async (req, res) => {
         name: name,
         description: description,
         price: Number(price),
-        imageUrl: imageUrl,
+        imageUrls: imageUrls,
         category: category,
       },
     });
@@ -61,7 +67,7 @@ app.get('/api/products', async (req, res) => {
 });
 
 
-app.get('/api/products/:id', authMiddleware, async (req, res) => {
+app.get('/api/products/:id',  async (req, res) => {
   try {
 
     const { id } = req.params;
@@ -86,7 +92,7 @@ app.get('/api/products/:id', authMiddleware, async (req, res) => {
 });
 
 
-app.patch('/api/products/:id', async (req, res) => {
+app.patch('/api/products/:id', authMiddleware, async (req, res) => {
   try {
 
     const { id } = req.params;
@@ -148,51 +154,56 @@ app.delete('/api/products/:id', authMiddleware, async (req, res) => {
 
 app.post('/api/auth/register', async (req, res) => {
   try {
-    const { name, phoneNumber, password } = req.body;
+    const { name, email, phoneNumber, password } = req.body;
 
 
-    if (!name || !phoneNumber || !password) {
+    if (!name || !email || !phoneNumber || !password) {
       return res.status(400).json({ error: 'Todos os campos são obrigatórios.' });
     }
 
     const passwordHash = await bcrypt.hash(password, 10);
 
-    const newUser = await prisma.user.create({
+    const user = await prisma.user.create({
       data: {
         name,
+        email,
         phoneNumber,
-        passwordHash, 
+        passwordHash,
+        role: 'CUSTOMER'
       },
     });
 
-    delete newUser.passwordHash;
+const token = jwt.sign(
+      { userId: user.id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: '8h' }
+    );
 
-    return res.status(201).json(newUser);
+    return res.status(201).json({ token: token });
 
   } catch (error) {
-  
-    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
-      return res.status(409).json({ error: 'Este número de telefone já está em uso.' }); // 409 Conflict
+    if (error.code === 'P2002') {
+      return res.status(409).json({ error: 'Email ou telefone já cadastrado.' });
     }
-    console.error("Erro ao registrar usuário:", error);
-    return res.status(500).json({ error: 'Não foi possível registrar o usuário.' });
+    console.error("Erro no registro:", error);
+    return res.status(500).json({ error: 'Não foi possível completar o registro.' });
   }
 });
 
 // ROTA PARA LOGIN DE USUÁRIO
 app.post('/api/auth/login', async (req, res) => {
   try {
-    const { phoneNumber, password } = req.body;
+    const { email, password } = req.body;
 
 
-    if (!phoneNumber || !password) {
-      return res.status(400).json({ error: 'Número de telefone e senha são obrigatórios.' });
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email e senha são obrigatórios.' });
     }
 
 
     const user = await prisma.user.findUnique({
       where: {
-        phoneNumber: phoneNumber,
+        email: email,
       },
     });
 
@@ -225,6 +236,131 @@ app.post('/api/auth/login', async (req, res) => {
   } catch (error) {
     console.error("Erro no login:", error);
     return res.status(500).json({ error: 'Não foi possível fazer o login.' });
+  }
+});
+
+const requestSpy = (req, res, next) => {
+  console.log('--- CABEÇALHOS RECEBIDOS ---');
+  console.log(req.headers);
+  console.log('---------------------------');
+  next();
+};
+
+app.post('/api/upload', requestSpy, upload.single('image'), async (req, res) => {
+  
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: 'Nenhum arquivo enviado.' });
+    }
+
+    const uploadPromise = new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: 'stylesync_products' }, 
+        (error, result) => {
+          if (error) {
+            return reject(error);
+          }
+          resolve(result);
+        }
+      );
+      stream.end(req.file.buffer);
+    });
+
+    const result = await uploadPromise;
+
+    return res.status(200).json({ url: result.secure_url });
+
+  } catch (error) {
+    console.error('Erro no upload da imagem:', error);
+    return res.status(500).json({ error: 'Falha no upload da imagem.' });
+  }
+});
+
+app.post('/api/orders', async (req, res) => {
+  const { cartItems, customerInfo } = req.body;
+
+  if (!cartItems || cartItems.length === 0) {
+    return res.status(400).json({ error: 'O carrinho não pode estar vazio.' });
+  }
+
+  try {
+    const createdOrder = await prisma.$transaction(async (prisma) => {
+      let total = 0;
+      for (const item of cartItems) {
+        const product = await prisma.product.findUnique({ where: { id: item.id } });
+        if (!product) throw new Error(`Produto com ID ${item.id} não encontrado.`);
+        total += product.price * item.quantity;
+      }
+
+      const order = await prisma.order.create({
+        data: {
+          totalAmount: total,
+          // Futuramente, adicionaremos os dados do cliente aqui (nome, endereço, etc.)
+        },
+      });
+
+      const orderItemsData = cartItems.map(item => ({
+        orderId: order.id,
+        productId: item.id,
+        quantity: item.quantity,
+        price: item.price,
+      }));
+
+      await prisma.orderItem.createMany({
+        data: orderItemsData,
+      });
+
+      return order;
+    });
+
+    res.status(201).json(createdOrder);
+  } catch (error) {
+    console.error("Erro ao criar pedido:", error);
+    res.status(500).json({ error: 'Não foi possível processar o pedido.' });
+  }
+});
+
+app.post('/api/orders', async (req, res) => {
+  const { cartItems, customerInfo } = req.body;
+
+  if (!cartItems || cartItems.length === 0) {
+    return res.status(400).json({ error: 'O carrinho não pode estar vazio.' });
+  }
+
+  try {
+    const createdOrder = await prisma.$transaction(async (prisma) => {
+      let total = 0;
+      for (const item of cartItems) {
+        const product = await prisma.product.findUnique({ where: { id: item.id } });
+        if (!product) throw new Error(`Produto com ID ${item.id} não encontrado.`);
+        total += product.price * item.quantity;
+      }
+
+      const order = await prisma.order.create({
+        data: {
+          totalAmount: total,
+        },
+      });
+
+
+      const orderItemsData = cartItems.map(item => ({
+        orderId: order.id,
+        productId: item.id,
+        quantity: item.quantity,
+        price: item.price, 
+      }));
+
+      await prisma.orderItem.createMany({
+        data: orderItemsData,
+      });
+
+      return order;
+    });
+
+    res.status(201).json(createdOrder);
+  } catch (error) {
+    console.error("Erro ao criar pedido:", error);
+    res.status(500).json({ error: 'Não foi possível processar o pedido.' });
   }
 });
 

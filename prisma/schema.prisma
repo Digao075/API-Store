@@ -14,15 +14,17 @@ model Product {
   name        String
   description String
   price       Decimal
-  imageUrl    String
+  imageUrls   String[]
   category    String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  orderItems  OrderItem[]
 }
 
 model User {
   id           String    @id @default(uuid())
-  phoneNumber  String    @unique 
+  email        String    @unique
+  phoneNumber  String    @unique
   name         String      
   passwordHash String    
   role         Role      @default(CUSTOMER) 
@@ -33,4 +35,29 @@ model User {
 enum Role {
   CUSTOMER
   ADMIN
+}
+
+model Order {
+  id          String      @id @default(uuid())
+  // userId      String?
+  // user        User?       @relation(fields: [userId], references: [id])
+  
+  totalAmount Decimal
+  status      String      @default("PENDING") // Ex: PENDING, SHIPPED, DELIVERED
+  createdAt   DateTime    @default(now())
+
+  // Relação: Um pedido tem VÁRIOS itens
+  items       OrderItem[]
+}
+
+model OrderItem {
+  id        String  @id @default(uuid())
+  quantity  Int
+  price     Decimal 
+
+  orderId   String
+  order     Order   @relation(fields: [orderId], references: [id])
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 }
